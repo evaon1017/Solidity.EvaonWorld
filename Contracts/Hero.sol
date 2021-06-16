@@ -10,29 +10,30 @@ enum EvaWorldMemberType {
     TownSection
 }
 
+interface IEvaWorld {
+    function addMember(EvaWorldMemberType _type) external;
+    function getMember(EvaWorldMemberType _type) view external returns(address);
+}
+
 contract EvaWorld is Owner {
-    mapping(EvaWorldMemberType => address) public members;
+    mapping(EvaWorldMemberType => address) private _members;
     
-    function addMember(EvaWorldMemberType _type, address _addr) public {
-        require(Owner(_addr).owner() == owner, "owner not the same");
-        members[_type] = _addr;
+    function getMember(EvaWorldMemberType _type) view public returns(address) {
+        return _members[_type];
+    }
+    
+    function link(EvaWorldMemberType _type, address _memberAddr) public {
+        require(Owner(_memberAddr).owner() == owner, "Owner not the same");
+        _members[_type] = _memberAddr;
+        EvaWorldMember(_memberAddr).joinWorld(address(this));
     }
 }
 
 contract EvaWorldMember is Owner {
-    address private _worldAddress;
-    EvaWorldMemberType private _memberType;
-    bool private _isLinked = false;
-    constructor(EvaWorldMemberType __memberType, address __worldAddress) {
+    address internal _worldAddress;
+    function joinWorld(address __worldAddress) public {
+        require(_worldAddress == address(0), "already join a world");
         _worldAddress = __worldAddress;
-        _memberType = __memberType;
-    }
-    
-    function linkWorld() public {
-        require(_isLinked == false, "already linked");
-        
-        EvaWorld(_worldAddress).addMember(_memberType, address(this));
-        _isLinked = true;
     }
 }
 
@@ -49,7 +50,8 @@ library MiscTool {
 contract EvaHero is Context, EvaWorldMember, ERC721 {
     using MiscTool for uint;
     uint private tokenIdPointer = 0;
-    constructor(string memory name, string memory symbol, address _worldAddr) ERC721(name, symbol) EvaWorldMember(EvaWorldMemberType.Hero, _worldAddr) { }
+    constructor(address _worldAddr) 
+        ERC721(string("Evaon World Hero"), string("HERO"))  { }
     
     mapping(uint => EvaHeroStruct) private _tokenMetas;
     mapping(uint => uint) private _tokenRandom;
@@ -76,12 +78,10 @@ struct EvaHeroStruct {
     string name;
 }
 
-contract EvaTown is Context, ERC721 {
+contract EvaTown is Context, EvaWorldMember, ERC721 {
     using MiscTool for uint;
     uint private tokenIdPointer = 0;
-    constructor(string memory name, string memory symbol) ERC721(name, symbol) {
-        
-    }
+    constructor(address _worldAddr) ERC721(string("Evaon World Town"), string("TOWN")) {  }
     
     mapping(uint => EvaTownStruct) private _tokenMetas;
     mapping(uint => uint) private _tokenRandom;
@@ -101,6 +101,8 @@ contract EvaTown is Context, ERC721 {
         }
         
         _mint(_msgSender(), _tokenId);
+        
+        IEvaTownSection(IEvaWorld(_worldAddress).getMember(EvaWorldMemberType.TownSection)).Mint(string("Default"));
     }
 }
 
@@ -109,24 +111,19 @@ struct EvaTownStruct {
     uint fromTown;
 }
 
-contract EvaTownSection is Context, ERC721 {
+interface IEvaTownSection {
+    function Mint(string memory _name) external;
+}
+
+contract EvaTownSection is Context, EvaWorldMember, ERC721, IEvaTownSection {
     using MiscTool for uint;
     uint private tokenIdPointer = 0;
-    constructor(string memory name, string memory symbol) ERC721(name, symbol) { }
+    constructor(address _worldAddr) ERC721(string("Evaon World Town Section"), string("SECTION")) { }
     
     mapping(uint => EvaTownSectionStruct) private _tokenMetas;
     mapping(uint => uint) private _tokenRandom;
     
-    function Mint(string memory _name) public {
-        uint _tokenId = ++tokenIdPointer;
-        _tokenMetas[_tokenId] = EvaTownSectionStruct({
-            name: _name
-        });
-        _tokenRandom[_tokenId] = uint(0).random();
-        _mint(_msgSender(), _tokenId);
-    }
-    
-    function MintForSender(string memory _name) public {
+    function Mint(string memory _name) public override {
         uint _tokenId = ++tokenIdPointer;
         _tokenMetas[_tokenId] = EvaTownSectionStruct({
             name: _name
